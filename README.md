@@ -25,7 +25,7 @@ poetry install
 
 編輯 esphome_project/secrets.yaml 文件，填寫您的 Wi-Fi、MQTT 等相關資訊：
 
-```toml
+```bash
 wifi_ssid: "Your_WiFi_SSID"
 wifi_password: "Your_WiFi_Password"
 mqtt_broker: "Your_MQTT_Broker"
