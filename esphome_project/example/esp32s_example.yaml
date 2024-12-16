@@ -1,0 +1,255 @@
+# esp32s00.yaml
+# version: 6.0  @2024-09-05
+# Wenchin Hsieh @ Goomo Studio
+
+esphome:
+  name: esp32s00
+  friendly_name: esp32s00
+
+esp32:
+  board: nodemcu-32s
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: INFO
+
+# If you enable MQTT and you do not use the “native API” for Home Assistant,
+#   you must remove the api: line from your ESPHome configuration,
+#   otherwise the ESP will reboot every 15 minutes because no client connected to the native API.
+
+# Enable Home Assistant API
+api:
+  password: !secret api_password
+#  encryption:
+#    # Encryption key must be base64 and 32 bytes long.
+#    key: "fjInDzZFAOXHkR9IItyo4pcO9A/eKT+9izEqhS/eX04="
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  - ssid: !secret wifi2_ssid
+    password: !secret wifi2_password
+
+  on_connect:
+    then:
+      - logger.log:
+          format: "ESP32 connected to Wi-Fi with IP: %s"
+          args: ['WiFi.localIP().toString().c_str()']
+
+
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: !secret wifiap_ssid
+    password: !secret wifiap_password
+
+captive_portal:
+
+
+# Enable default Web server
+web_server:
+  port: 80
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+
+
+# INCLUDES
+mqtt: !include esp32s_mqtts.yaml
+display: !include esp32s_displays.yaml
+light: !include esp32s_lights.yaml
+switch: !include esp32s_switches.yaml
+sensor: !include esp32s_sensors.yaml
+binary_sensor: !include esp32s_binary_sensors.yaml
+script: !include esp32s_scripts.yaml
+
+
+# Global Variables
+globals:
+  - id: scanned_tag
+    type: std::string
+    initial_value: '""'
+
+  - id: playing_game_over
+    type: bool
+    initial_value: 'false'
+  - id: playing_indiana_jones
+    type: bool
+    initial_value: 'false'
+  - id: playing_star_wars
+    type: bool
+    initial_value: 'false'
+
+  - id: game_over
+    type: std::string
+    initial_value: '"game_over:d=4,o=5,b=90:32c6,32c6,32c6,8p,16b,16f6,16p,16f6,16f.6,16e.6,16d6,16c6,16p,16e,16p,16c"'
+  - id: indiana_jones
+    type: std::string
+    initial_value: '"Indiana:d=4,o=5,b=250:e,8p,8f,8g,8p,1c6,8p.,d,8p,8e,1f,p.,g,8p,8a,8b,8p,1f6,p,a,8p,8b,2c6,2d6,2e6,e,8p,8f,8g,8p,1c6,p,d6,8p,8e6,1f.6,g,8p,8g,e.6,8p,d6,8p,8g,e.6,8p,d6,8p,8g,f.6,8p,e6,8p,8d6,2c6"'
+  - id: star_wars
+    type: std::string
+    initial_value: '"star_wars:d=16,o=5,b=100:4e,4e,4e,8c,p,g,4e,8c,p,g,4e,4p,4b,4b,4b,8c6,p,g,4d#,8c,p,g,4e,8p"'
+
+
+# Template Number
+number:
+  - platform: template
+    mode: box
+    name: "Servo Angle"
+    optimistic: true
+    initial_value: 0
+    min_value: -99
+    max_value: 99
+    step: 1
+    on_value:
+      then:
+        #- script.execute:
+        #    id: servo_given
+        #    given_angle: !lambda 'return x;'
+        - servo.write:
+            id: servo_sg90
+            level: !lambda 'return x / 100.0;'
+        - delay: 2s
+        - lambda: |-
+            id(servo_sg90).write(0.9);
+        - delay: 2s
+        - lambda: |-
+            id(servo_sg90).write(-0.9);
+        - delay: 2s
+        - lambda: |-
+            id(servo_sg90).write(0.0);
+
+
+# Template Text Sensor
+text_sensor:
+  - platform: template
+    name: The Last Tag
+    lambda: 'return id(scanned_tag);'
+    update_interval: 1s
+
+
+# Timer / Chronic Job
+time:
+  - platform: sntp
+    id: sntp_time
+    on_time:
+      # Every 5 minutes
+      - seconds: /10
+        then:
+          - switch.toggle: rgb_led_green
+
+
+# OLED 顯示器
+i2c:
+  sda: 21
+  scl: 22
+  frequency: 800kHz
+
+font:
+  - file: 'fonts/arial.ttf'
+    id: font_arial_24
+    size: 24
+  - file: 'fonts/arial.ttf'
+    id: font_arial_20
+    size: 20
+  - file: 'fonts/lucon.ttf'
+    id: font_lucidaconsole_20
+    size: 20
+  - file: 'fonts/times.ttf'
+    id: font_times_20
+    size: 20
+  - file: 'fonts/times.ttf'
+    id: font_times_22
+    size: 22
+
+
+# SPI 介面設定
+spi:
+  clk_pin: 18
+  miso_pin: 19
+  mosi_pin: 23
+
+
+# RC522 NFC/RFID 感應模組
+rc522_spi: # or rc522_i2c
+  id: rfid_scanner
+  cs_pin: 5
+  update_interval: 0.5s
+  on_tag:
+    then:
+      - globals.set:
+          id: scanned_tag
+          value: !lambda |-
+            return x;
+      - mqtt.publish:
+          topic: ntub/my_name/tag
+          payload: !lambda |-
+            return x;
+      - if:
+          condition:
+            lambda: 'return id(scanned_tag) == "63F30696";'
+          then:
+            - switch.turn_on: tag_63F30696
+          else:
+            - switch.turn_off: tag_63F30696
+
+
+# Servo 伺服馬達
+servo:
+  - id: servo_sg90
+    output: servo_output
+    restore: true
+    min_level: 5%
+    max_level: 95%
+
+
+output:
+  # Servo 伺服馬達
+  # platform -- On ESP8266, use esp8266_pwm output; On ESP32, use ledc output.
+  - id: servo_output
+    platform: ledc
+    pin: 27
+    frequency: 50 Hz
+
+  # 無源蜂鳴器 Buzzer
+  # platform -- On ESP8266, use esp8266_pwm output; On ESP32, use ledc output.
+  - platform: ledc
+    pin: 4
+    id: rtttl_out
+
+
+# Ring Tone
+rtttl:
+  output: rtttl_out
+  on_finished_playback:
+    - logger.log: 'Song Ended!'
+    - globals.set:
+        id: playing_game_over
+        value: 'false'
+    - globals.set:
+        id: playing_indiana_jones
+        value: 'false'
+    - globals.set:
+        id: playing_star_wars
+        value: 'false'
+    - lambda: |-
+        id(rtttl_game_over).publish_state(false);
+        id(rtttl_indiana_jones).publish_state(false);
+        id(rtttl_star_wars).publish_state(false);
+
+
+remote_receiver:
+  pin: 25
+  dump: all
+
+
+remote_transmitter:
+  pin: 26
+  carrier_duty_percent: 90%

@@ -1,0 +1,156 @@
+esphome:
+  name: esp32s-rfid-1
+  # 設定在設備啟動時執行的動作
+  on_boot:
+    priority: -10  # 延遲優先級，確保 Wi-Fi 已連線
+    then:
+      - delay: 5s  # 確保 Wi-Fi 啟動完成
+      - mqtt.publish:
+          topic: "ip_address"
+          payload: !lambda |-
+            return WiFi.localIP().toString().c_str();
+      - logger.log:
+          format: "Device IP Address: %s"
+          args: [WiFi.localIP().toString().c_str()]
+
+esp32:
+  board: nodemcu-32s
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  - platform: esphome
+    password: ""
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+    - ssid: !secret wifi2_ssid
+      password: !secret wifi2_password
+    - ssid: !secret wifi3_ssid
+      password: !secret wifi3_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Esp32S-Rfid-1 Fallback Hotspot"
+    password: "gpzZlof2kCfH"
+
+captive_portal:
+
+
+mqtt:
+  broker: "broker.emqx.io" # 替換為 MQTT Broker 的 IP 地址
+  username: ""     # MQTT 用戶名
+  password: ""     # MQTT 密碼
+  discovery: true                # 啟用 Home Assistant 自動發現功能
+  topic_prefix: "esp32s_rfid"    # 為設備設置一個唯一的主題前綴
+
+
+# Global Variables
+globals:
+  - id: scanned_tag
+    type: std::string
+    initial_value: '""'
+
+# SPI 設定
+spi:
+  clk_pin: 18
+  miso_pin: 19
+  mosi_pin: 23
+
+# RC522 NFC/RFID 感應模組
+rc522_spi: # or rc522_i2c
+  id: rfid_scanner
+  cs_pin: 5
+  update_interval: 0.5s
+  on_tag:
+    then:
+      - logger.log: "RFID Tag Detected"
+      - globals.set:
+          id: scanned_tag
+          value: !lambda |-
+            return x;
+      - logger.log:
+          format: "Tag Scanned: %s"
+          args: ['x']
+      - lambda: |-
+          id(oled_id).clear();
+          id(oled_id).print(0, 0, id(font_arial_20), "RFID Tag:");
+          id(oled_id).print(0, 25, id(font_arial_24), x.c_str());
+          id(oled_id).display();
+      - rtttl.play: "check_in:d=16,o=5,b=120:c,e,g,e,a,f,c"
+      - mqtt.publish:
+          topic: "tag_scanned"
+          payload: !lambda |-
+            return x.c_str();
+      - logger.log:
+          format: "Tag Published to MQTT: %s"
+          args: ['x']
+
+
+
+# OLED 顯示器
+i2c:
+  sda: 21
+  scl: 22
+  frequency: 800kHz
+
+display:
+  - platform: ssd1306_i2c
+    id: oled_id
+    model: "SSD1306 128x64"  # 根據你的顯示器型號選擇
+    address: 0x3C
+    update_interval: 5s
+    lambda: |-
+      id(oled_id).clear();
+      id(oled_id).print(0, 0, id(font_arial_20), "Waiting for");
+      id(oled_id).print(0, 25, id(font_arial_24), "RFID...");
+
+
+font:
+  - file: 'fonts/arial.ttf'
+    id: font_arial_24
+    size: 24
+  - file: 'fonts/arial.ttf'
+    id: font_arial_20
+    size: 20
+  - file: 'fonts/lucon.ttf'
+    id: font_lucidaconsole_20
+    size: 20
+  - file: 'fonts/times.ttf'
+    id: font_times_20
+    size: 20
+  - file: 'fonts/times.ttf'
+    id: font_times_22
+    size: 22
+
+# 無源蜂鳴器
+output:
+  - platform: ledc
+    pin: 4
+    id: rtttl_out
+
+rtttl:
+  output: rtttl_out
+  on_finished_playback:
+    - logger.log: 'Playback Finished!'
+
+# switch:
+#   - platform: gpio
+#     pin: 4
+#     id: test_buzzer
+
+# interval:
+#   - interval: 1s
+#     then:
+#       - switch.turn_on: test_buzzer
+#       - delay: 500ms
+#       - switch.turn_off: test_buzzer

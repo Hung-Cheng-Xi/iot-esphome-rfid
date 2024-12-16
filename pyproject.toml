@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "rfid"
+version = "0.1.0"
+description = ""
+authors = ["Hung-Cheng-Xi <11146062@ntub.edu.tw>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.12.7"
+esphome = "^2024.11.2"
+esptool = "4.7.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
